@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Finio — Your personal financial operating system">
+<meta name="theme-color" content="#0a0a0f">
+<title>Finio — Your Money, Fully Visible</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-mark">
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <rect width="12" height="12" rx="3" fill="#6ee7b7"/>
+        <rect x="16" width="12" height="12" rx="3" fill="#6ee7b7" opacity="0.5"/>
+        <rect y="16" width="12" height="12" rx="3" fill="#6ee7b7" opacity="0.3"/>
+        <rect x="16" y="16" width="12" height="12" rx="3" fill="#6ee7b7" opacity="0.7"/>
+      </svg>
+    </div>
+    <span class="logo-text">finio</span>
+  </div>
+
+  <nav class="sidebar-nav">
+    <div class="nav-section-label">Overview</div>
+    <a href="#" class="nav-item active" data-page="dashboard">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Dashboard
+    </a>
+    <a href="#" class="nav-item" data-page="transactions">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
+      Transactions
+    </a>
+    <a href="#" class="nav-item" data-page="analytics">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 4-6"/></svg>
+      Analytics
+    </a>
+
+    <div class="nav-section-label">Finance</div>
+    <a href="#" class="nav-item" data-page="loans">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><path d="M12 6v6l4 2"/></svg>
+      Loans & EMIs
+    </a>
+    <a href="#" class="nav-item" data-page="recurring">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15"/></svg>
+      Recurring
+    </a>
+    <a href="#" class="nav-item" data-page="insights">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+      Insights
+    </a>
+
+    <div class="nav-section-label">Tools</div>
+    <a href="#" class="nav-item" data-page="ledger">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10,9 9,9 8,9"/></svg>
+      Ledger
+    </a>
+  </nav>
+
+  <div class="sidebar-bottom">
+    <button class="theme-toggle" id="themeToggle" title="Toggle theme">
+      <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+    </button>
+    <div class="sidebar-user">
+      <div class="user-avatar">SM</div>
+      <div class="user-info">
+        <span class="user-name">Sumanth M.</span>
+        <span class="user-email">Personal</span>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- MOBILE TOPBAR -->
+<header class="mobile-header">
+  <button class="hamburger" id="hamburger">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="mobile-logo">finio</div>
+  <button class="theme-toggle-mobile" id="themeToggleMobile">
+    <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+    <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+  </button>
+</header>
+
+<!-- MAIN CONTENT -->
+<main class="main" id="main">
+
+  <!-- DASHBOARD PAGE -->
+  <div class="page active" id="page-dashboard">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Good morning, Sumanth <span class="wave">👋</span></h1>
+        <p class="page-sub">Here's your financial snapshot for May 2026</p>
+      </div>
+      <button class="btn-primary" onclick="openModal('addTransaction')">+ Add Transaction</button>
+    </div>
+
+    <!-- KPI STRIP -->
+    <div class="kpi-grid">
+      <div class="kpi-card kpi-income">
+        <div class="kpi-label">Monthly Income</div>
+        <div class="kpi-value" id="kpi-income">₹0</div>
+        <div class="kpi-delta positive">+12% vs last month</div>
+      </div>
+      <div class="kpi-card kpi-expense">
+        <div class="kpi-label">Total Spent</div>
+        <div class="kpi-value" id="kpi-spent">₹0</div>
+        <div class="kpi-delta negative" id="kpi-spent-pct">0% of income</div>
+      </div>
+      <div class="kpi-card kpi-savings">
+        <div class="kpi-label">Net Savings</div>
+        <div class="kpi-value" id="kpi-savings">₹0</div>
+        <div class="kpi-delta" id="kpi-savings-pct">0% savings rate</div>
+      </div>
+      <div class="kpi-card kpi-debt">
+        <div class="kpi-label">Total Outstanding</div>
+        <div class="kpi-value" id="kpi-debt">₹0</div>
+        <div class="kpi-delta">Across all liabilities</div>
+      </div>
+    </div>
+
+    <!-- CHARTS ROW -->
+    <div class="charts-row">
+      <div class="chart-card wide">
+        <div class="chart-header">
+          <h3>Spending Trend</h3>
+          <div class="chart-tabs">
+            <button class="chart-tab active" data-range="6m">6M</button>
+            <button class="chart-tab" data-range="3m">3M</button>
+            <button class="chart-tab" data-range="1m">1M</button>
+          </div>
+        </div>
+        <div style="position:relative;height:220px;">
+          <canvas id="spendingTrendChart" role="img" aria-label="Monthly spending trend chart"></canvas>
+        </div>
+      </div>
+      <div class="chart-card narrow">
+        <div class="chart-header"><h3>By Category</h3></div>
+        <div style="position:relative;height:180px;margin-top:8px;">
+          <canvas id="categoryDonut" role="img" aria-label="Spending by category donut chart"></canvas>
+        </div>
+        <div class="donut-legend" id="donutLegend"></div>
+      </div>
+    </div>
+
+    <!-- RECENT TRANSACTIONS + HEALTH SCORE -->
+    <div class="bottom-row">
+      <div class="card recent-txn-card">
+        <div class="card-header">
+          <h3>Recent Transactions</h3>
+          <a href="#" class="link-sm" data-page="transactions" onclick="navigate('transactions')">View all</a>
+        </div>
+        <div class="txn-list" id="recentTxnList">
+          <div class="empty-state">No transactions yet. Add your first one!</div>
+        </div>
+      </div>
+      <div class="card health-card">
+        <div class="card-header"><h3>Financial Health</h3></div>
+        <div class="health-score-ring">
+          <svg viewBox="0 0 120 120" width="120" height="120">
+            <circle cx="60" cy="60" r="50" fill="none" stroke-width="8" class="ring-bg"/>
+            <circle cx="60" cy="60" r="50" fill="none" stroke-width="8" class="ring-fill" id="healthRing"
+              stroke-dasharray="314" stroke-dashoffset="220" stroke-linecap="round" transform="rotate(-90 60 60)"/>
+          </svg>
+          <div class="health-score-label">
+            <span class="health-score-num" id="healthScoreNum">72</span>
+            <span class="health-score-txt">/ 100</span>
+          </div>
+        </div>
+        <div class="health-breakdown">
+          <div class="health-row">
+            <span>Savings Rate</span>
+            <div class="health-bar-wrap"><div class="health-bar" id="hbar-savings" style="width:60%"></div></div>
+            <span class="health-val" id="hval-savings">60%</span>
+          </div>
+          <div class="health-row">
+            <span>Debt Ratio</span>
+            <div class="health-bar-wrap"><div class="health-bar danger" id="hbar-debt" style="width:40%"></div></div>
+            <span class="health-val" id="hval-debt">40%</span>
+          </div>
+          <div class="health-row">
+            <span>Budget Control</span>
+            <div class="health-bar-wrap"><div class="health-bar" id="hbar-budget" style="width:75%"></div></div>
+            <span class="health-val" id="hval-budget">75%</span>
+          </div>
+        </div>
+        <div class="nudge-box" id="nudgeBox">
+          <span class="nudge-icon">💡</span>
+          <span id="nudgeText">Keep it up! Your savings rate is healthy.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRANSACTIONS PAGE -->
+  <div class="page" id="page-transactions">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Transactions</h1>
+        <p class="page-sub">All your income and expense records</p>
+      </div>
+      <button class="btn-primary" onclick="openModal('addTransaction')">+ Add Transaction</button>
+    </div>
+    <div class="card">
+      <div class="txn-filters">
+        <input type="text" id="txnSearch" placeholder="Search transactions..." class="search-input" oninput="renderTransactionPage()">
+        <select id="txnCatFilter" onchange="renderTransactionPage()">
+          <option value="">All Categories</option>
+        </select>
+        <select id="txnTypeFilter" onchange="renderTransactionPage()">
+          <option value="">All Types</option>
+          <option value="income">Income</option>
+          <option value="expense">Expense</option>
+        </select>
+        <select id="txnMonthFilter" onchange="renderTransactionPage()">
+          <option value="">All Months</option>
+        </select>
+        <button class="btn-outline" onclick="exportCSV()">↓ Export CSV</button>
+      </div>
+      <div class="txn-table-wrap">
+        <table class="txn-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Description</th>
+              <th>Category</th>
+              <th>Type</th>
+              <th>Amount</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="txnTableBody">
+          </tbody>
+        </table>
+        <div class="empty-state" id="txnEmpty" style="display:none">No transactions match your filters.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ANALYTICS PAGE -->
+  <div class="page" id="page-analytics">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Analytics</h1>
+        <p class="page-sub">Deep dive into your spending patterns</p>
+      </div>
+    </div>
+    <div class="analytics-grid">
+      <div class="chart-card">
+        <div class="chart-header"><h3>Monthly Income vs Expense</h3></div>
+        <div style="position:relative;height:260px;"><canvas id="incomeExpenseChart" role="img" aria-label="Monthly income vs expense bar chart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-header"><h3>Category Breakdown</h3></div>
+        <div style="position:relative;height:260px;"><canvas id="categoryBarChart" role="img" aria-label="Category spending bar chart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-header"><h3>Daily Spending Heatmap</h3></div>
+        <div id="heatmapContainer" style="min-height:160px;padding:8px 0;"></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-header"><h3>Savings Rate Over Time</h3></div>
+        <div style="position:relative;height:220px;"><canvas id="savingsRateChart" role="img" aria-label="Savings rate line chart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOANS PAGE -->
+  <div class="page" id="page-loans">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Loans & EMIs</h1>
+        <p class="page-sub">Track all your liabilities and repayment progress</p>
+      </div>
+      <button class="btn-primary" onclick="openModal('addLoan')">+ Add Loan</button>
+    </div>
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-label">Total Debt</div><div class="kpi-value" id="loan-total">₹0</div></div>
+      <div class="kpi-card"><div class="kpi-label">Monthly EMI Load</div><div class="kpi-value" id="loan-emi">₹0</div></div>
+      <div class="kpi-card"><div class="kpi-label">Avg Interest Rate</div><div class="kpi-value" id="loan-rate">0%</div></div>
+      <div class="kpi-card"><div class="kpi-label">Debt-to-Income</div><div class="kpi-value" id="loan-dti">0%</div></div>
+    </div>
+    <div class="loans-list" id="loansList">
+      <div class="empty-state">No loans added yet.</div>
+    </div>
+  </div>
+
+  <!-- RECURRING PAGE -->
+  <div class="page" id="page-recurring">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Recurring Payments</h1>
+        <p class="page-sub">Subscriptions, rent, SIPs, and recurring obligations</p>
+      </div>
+      <button class="btn-primary" onclick="openModal('addRecurring')">+ Add Recurring</button>
+    </div>
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-label">Monthly Commitments</div><div class="kpi-value" id="rec-monthly">₹0</div></div>
+      <div class="kpi-card"><div class="kpi-label">Annual Total</div><div class="kpi-value" id="rec-annual">₹0</div></div>
+      <div class="kpi-card"><div class="kpi-label">Active Subscriptions</div><div class="kpi-value" id="rec-count">0</div></div>
+      <div class="kpi-card"><div class="kpi-label">Due This Week</div><div class="kpi-value" id="rec-due">0</div></div>
+    </div>
+    <div class="recurring-grid" id="recurringGrid">
+      <div class="empty-state">No recurring payments added yet.</div>
+    </div>
+  </div>
+
+  <!-- INSIGHTS PAGE -->
+  <div class="page" id="page-insights">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Insights</h1>
+        <p class="page-sub">Behavioural finance nudges and spending intelligence</p>
+      </div>
+    </div>
+    <div class="insights-grid" id="insightsGrid">
+    </div>
+  </div>
+
+  <!-- LEDGER PAGE -->
+  <div class="page" id="page-ledger">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Historical Ledger</h1>
+        <p class="page-sub">Complete financial record — grouped by month</p>
+      </div>
+      <button class="btn-outline" onclick="exportCSV()">↓ Export CSV</button>
+    </div>
+    <div id="ledgerContent"></div>
+  </div>
+
+</main>
+
+<!-- MODALS -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+
+    <!-- ADD TRANSACTION MODAL -->
+    <div class="modal-body" id="modal-addTransaction">
+      <div class="modal-header">
+        <h2>Add Transaction</h2>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Type</label>
+          <div class="toggle-group">
+            <button class="toggle-btn active" id="typeExpense" onclick="setTxnType('expense')">Expense</button>
+            <button class="toggle-btn" id="typeIncome" onclick="setTxnType('income')">Income</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Amount (₹)</label>
+          <input type="number" id="txnAmount" placeholder="0.00" min="0" step="0.01">
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <input type="text" id="txnDesc" placeholder="e.g. Zomato, Salary, Netflix">
+        </div>
+        <div class="form-group">
+          <label>Category</label>
+          <select id="txnCategory">
+            <option value="Food">Food & Dining</option>
+            <option value="Transport">Transport</option>
+            <option value="Shopping">Shopping</option>
+            <option value="Entertainment">Entertainment</option>
+            <option value="Utilities">Utilities</option>
+            <option value="Health">Health</option>
+            <option value="Subscriptions">Subscriptions</option>
+            <option value="EMI">EMI / Loan</option>
+            <option value="Rent">Rent</option>
+            <option value="Investment">Investment</option>
+            <option value="Salary">Salary</option>
+            <option value="Freelance">Freelance</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Date</label>
+          <input type="date" id="txnDate">
+        </div>
+        <div class="form-group">
+          <label>Payment Mode</label>
+          <select id="txnMode">
+            <option value="UPI">UPI</option>
+            <option value="Card">Credit/Debit Card</option>
+            <option value="Cash">Cash</option>
+            <option value="NetBanking">Net Banking</option>
+            <option value="EMI">EMI</option>
+          </select>
+        </div>
+        <div class="form-group full-width">
+          <label>Notes</label>
+          <input type="text" id="txnNotes" placeholder="Optional notes or tags">
+        </div>
+        <div class="form-group full-width">
+          <label class="checkbox-label">
+            <input type="checkbox" id="txnRecurring"> Mark as recurring
+          </label>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-outline" onclick="closeModal()">Cancel</button>
+        <button class="btn-primary" onclick="saveTransaction()">Save Transaction</button>
+      </div>
+    </div>
+
+    <!-- ADD LOAN MODAL -->
+    <div class="modal-body" id="modal-addLoan" style="display:none">
+      <div class="modal-header">
+        <h2>Add Loan / EMI</h2>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+      <div class="form-grid">
+        <div class="form-group full-width">
+          <label>Loan Name</label>
+          <input type="text" id="loanName" placeholder="e.g. Home Loan, Personal Loan">
+        </div>
+        <div class="form-group">
+          <label>Principal Amount (₹)</label>
+          <input type="number" id="loanPrincipal" placeholder="500000">
+        </div>
+        <div class="form-group">
+          <label>Outstanding Balance (₹)</label>
+          <input type="number" id="loanBalance" placeholder="350000">
+        </div>
+        <div class="form-group">
+          <label>EMI Amount (₹)</label>
+          <input type="number" id="loanEMI" placeholder="12000">
+        </div>
+        <div class="form-group">
+          <label>Interest Rate (%)</label>
+          <input type="number" id="loanRate" placeholder="8.5" step="0.1">
+        </div>
+        <div class="form-group">
+          <label>Due Date (Monthly)</label>
+          <input type="number" id="loanDueDay" placeholder="5" min="1" max="31">
+        </div>
+        <div class="form-group">
+          <label>Type</label>
+          <select id="loanType">
+            <option value="Home Loan">Home Loan</option>
+            <option value="Personal Loan">Personal Loan</option>
+            <option value="Car Loan">Car Loan</option>
+            <option value="Education Loan">Education Loan</option>
+            <option value="Credit Card">Credit Card Due</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-outline" onclick="closeModal()">Cancel</button>
+        <button class="btn-primary" onclick="saveLoan()">Save Loan</button>
+      </div>
+    </div>
+
+    <!-- ADD RECURRING MODAL -->
+    <div class="modal-body" id="modal-addRecurring" style="display:none">
+      <div class="modal-header">
+        <h2>Add Recurring Payment</h2>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+      <div class="form-grid">
+        <div class="form-group full-width">
+          <label>Name</label>
+          <input type="text" id="recName" placeholder="e.g. Netflix, Rent, SIP">
+        </div>
+        <div class="form-group">
+          <label>Amount (₹)</label>
+          <input type="number" id="recAmount" placeholder="0">
+        </div>
+        <div class="form-group">
+          <label>Frequency</label>
+          <select id="recFrequency">
+            <option value="monthly">Monthly</option>
+            <option value="yearly">Yearly</option>
+            <option value="weekly">Weekly</option>
+            <option value="quarterly">Quarterly</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Category</label>
+          <select id="recCategory">
+            <option value="Subscription">Subscription</option>
+            <option value="Rent">Rent</option>
+            <option value="Insurance">Insurance</option>
+            <option value="SIP">SIP / Investment</option>
+            <option value="Utility">Utility</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Due Day of Month</label>
+          <input type="number" id="recDueDay" placeholder="1" min="1" max="31">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-outline" onclick="closeModal()">Cancel</button>
+        <button class="btn-primary" onclick="saveRecurring()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
