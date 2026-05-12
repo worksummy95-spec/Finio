@@ -1077,15 +1077,35 @@ async function doPDFRead(file) {
     const arrayBuf = await file.arrayBuffer();
     const pdf      = await pdfjsLib.getDocument({ data: arrayBuf }).promise;
     let fullText   = '';
+
     for (let i = 1; i <= pdf.numPages; i++) {
       const page    = await pdf.getPage(i);
       const content = await page.getTextContent();
-      const pageText = content.items.map(s => s.str).join(' ');
-      fullText += pageText + '\n';
+
+      // Group items by Y position (same line = same Y within tolerance)
+      // This preserves the columnar structure of bank statements
+      const lines = {};
+      content.items.forEach(item => {
+        const y = Math.round(item.transform[5]); // Y coordinate
+        if (!lines[y]) lines[y] = [];
+        lines[y].push({ x: item.transform[4], text: item.str });
+      });
+
+      // Sort lines by Y descending (top to bottom), items by X ascending (left to right)
+      const sortedYs = Object.keys(lines).map(Number).sort((a, b) => b - a);
+      sortedYs.forEach(y => {
+        const lineItems = lines[y].sort((a, b) => a.x - b.x);
+        const lineText  = lineItems.map(it => it.text).join(' ').trim();
+        if (lineText) fullText += lineText + '\n';
+      });
+
+      fullText += '\n';
     }
+
     IMPORT.pdfText = fullText;
     processPDFText(fullText);
   } catch(err) {
+    console.error('PDF read error:', err);
     showToast('Could not read PDF. Make sure it is not password-protected.', 'error');
   }
 }
@@ -1093,112 +1113,307 @@ async function doPDFRead(file) {
 // ── PDF TEXT PROCESSOR ──
 function processPDFText(text) {
   const lower = text.toLowerCase();
-  const extracted = [];
 
-  // Attempt salary slip detection
-  const isSalarySlip = /salary|payslip|pay slip|net pay|gross|ctc|basic pay|deduction/i.test(lower);
-
-  if (isSalarySlip) {
-    const salaryTxn = extractSalaryData(text);
-    if (salaryTxn) extracted.push(salaryTxn);
+  // ── 1. Bank statement detection (Canara, HDFC, ICICI, SBI, Axis, Kotak, generic) ──
+  const isBankStmt = /opening balance|closing balance|statement for|passbook|account statement|transaction\s*history|deposits.*withdrawals|particulars.*balance/i.test(lower);
+  if (isBankStmt) {
+    const txns = extractBankStatementPDF(text);
+    if (txns.length) {
+      IMPORT.parsedTxns = txns;
+      buildReviewTable();
+      goToStep(3);
+      return;
+    }
   }
 
-  // Attempt invoice/receipt detection
-  const isInvoice = /invoice|receipt|total|amount due|bill to|grand total/i.test(lower);
+  // ── 2. Salary slip ──
+  const isSalary = /salary|payslip|pay slip|net pay|gross|ctc|basic pay|deduction/i.test(lower);
+  if (isSalary) {
+    const t = extractSalaryData(text);
+    if (t) { IMPORT.parsedTxns = [t]; buildReviewTable(); goToStep(3); return; }
+  }
+
+  // ── 3. Invoice / receipt ──
+  const isInvoice = /invoice|receipt|amount due|bill to|grand total/i.test(lower);
   if (isInvoice) {
-    const invTxn = extractInvoiceData(text);
-    if (invTxn) extracted.push(invTxn);
+    const t = extractInvoiceData(text);
+    if (t) { IMPORT.parsedTxns = [t]; buildReviewTable(); goToStep(3); return; }
   }
 
-  // Generic: look for any date + amount patterns
-  if (!extracted.length) {
-    const genericTxns = extractGenericAmounts(text);
-    extracted.push(...genericTxns);
-  }
-
-  if (!extracted.length) {
-    // Fall back — show raw text and let user create manually
-    showPDFManualEntry(text);
+  // ── 4. Generic fallback ──
+  const genericTxns = extractGenericAmounts(text);
+  if (genericTxns.length) {
+    IMPORT.parsedTxns = genericTxns;
+    buildReviewTable();
+    goToStep(3);
     return;
   }
 
-  // Go to review with extracted transactions
-  IMPORT.parsedTxns = extracted;
-  buildReviewTable();
-  goToStep(3);
+  // ── 5. Nothing found — show raw text ──
+  showPDFManualEntry(text);
+}
+
+// ── BANK STATEMENT PDF EXTRACTOR ──
+// Handles Canara ePassbook and similar Indian bank PDFs
+// These PDFs render each transaction across multiple text lines/tokens.
+// Strategy: reconstruct the statement by finding date anchors, then
+// collecting the description tokens and the final amount token before
+// the next date anchor.
+function extractBankStatementPDF(text) {
+  const txns = [];
+
+  // Canara ePassbook uses DD-MM-YYYY dates like "11-04-2026"
+  // Other banks use DD/MM/YYYY or DD-MMM-YYYY
+  // We'll normalise everything.
+
+  // Split into tokens — PDF.js joins with spaces so we work token by token
+  const tokens = text.split(/\s+/).filter(t => t.trim());
+
+  // ── Pass 1: find all date positions ──
+  // Match DD-MM-YYYY, DD/MM/YYYY, DD.MM.YYYY
+  const dateRe = /^(\d{2})[-\/\.](\d{2})[-\/\.](\d{4})$/;
+  const datePositions = []; // [{idx, isoDate}]
+
+  tokens.forEach((tok, idx) => {
+    const m = tok.match(dateRe);
+    if (m) {
+      // Validate it's a real date
+      const [, d, mo, y] = m;
+      if (parseInt(d) >= 1 && parseInt(d) <= 31 && parseInt(mo) >= 1 && parseInt(mo) <= 12) {
+        datePositions.push({ idx, isoDate: `${y}-${mo}-${d}` });
+      }
+    }
+  });
+
+  if (!datePositions.length) return [];
+
+  // ── Pass 2: for each date, collect everything until the next date ──
+  // In a bank statement the structure per row is roughly:
+  // [DATE] [desc tokens...] [optional cheque/ref] [deposit_or_withdrawal_amount] [balance_amount]
+  // The LAST two numbers in the block are usually withdrawal/deposit + balance
+  // We determine type by:
+  //   - UPI/DR → debit, UPI/CR → credit
+  //   - NEFT CR → credit, NACH → debit
+  //   - "Deposits" column value present → credit
+
+  // Money token: matches Indian-format numbers like 1,83,767.22 or 16,000.00 or 50.00
+  const moneyRe = /^[\d,]+\.\d{2}$/;
+  const isMoneyToken = t => moneyRe.test(t.replace(/,/g, '')) === false
+    ? /^[\d]{1,3}(,\d{2,3})*(\.\d{2})?$/.test(t)
+    : true;
+
+  // Strictly: money token must be digits+commas optionally followed by .XX
+  function looksLikeMoney(t) {
+    return /^\d{1,3}(,\d{2,3})*(,\d{2,3})*(\.\d{1,2})?$/.test(t) ||
+           /^\d+(\.\d{1,2})?$/.test(t);
+  }
+
+  function stripMoney(s) {
+    // Remove all commas then parse — handles 1,83,767.22 → 183767.22
+    return parseFloat(s.replace(/,/g, '')) || 0;
+  }
+
+  for (let i = 0; i < datePositions.length; i++) {
+    const start = datePositions[i].idx;
+    const end   = i + 1 < datePositions.length ? datePositions[i + 1].idx : tokens.length;
+    const isoDate = datePositions[i].isoDate;
+
+    const block = tokens.slice(start + 1, end);
+    if (!block.length) continue;
+
+    // Collect money tokens from the end of the block
+    const moneyTokens = [];
+    let descEnd = block.length;
+    for (let j = block.length - 1; j >= 0; j--) {
+      if (looksLikeMoney(block[j])) {
+        moneyTokens.unshift(block[j]);
+        descEnd = j;
+      } else break;
+    }
+
+    // Need at least 1 money token (amount or balance)
+    if (!moneyTokens.length) continue;
+
+    // Balance is last money token; transaction amount is second-to-last (if 2+ tokens)
+    // If only 1 money token it could be balance only — skip
+    if (moneyTokens.length < 1) continue;
+
+    let txnAmount = 0;
+    if (moneyTokens.length >= 2) {
+      // Last = balance, second-to-last = debit OR deposit amount
+      txnAmount = stripMoney(moneyTokens[moneyTokens.length - 2]);
+    } else {
+      // Only one number — probably just balance, skip
+      continue;
+    }
+
+    if (txnAmount <= 0 || txnAmount > 50000000) continue;
+
+    // Description: all non-money tokens before the money tokens
+    const descTokens = block.slice(0, descEnd).filter(t =>
+      !looksLikeMoney(t) &&
+      !/^(Chq:|CHQ:)/i.test(t) &&
+      t.length > 0
+    );
+    const rawDesc = descTokens.join(' ').trim();
+
+    // Determine credit or debit
+    // Canara uses UPI/DR for debit and UPI/CR for credit
+    // NEFT CR = credit, NACH = debit (loan/subscription pulls)
+    const isCreditSignal =
+      /UPI\/CR|NEFT\s*CR|CR\s*[-\/]|\/CR\//i.test(rawDesc) ||
+      /UPI\/REF/i.test(rawDesc);    // refunds are credits
+    const isDebitSignal =
+      /UPI\/DR|NEFT\s*DR|DR\s*[-\/]|\/DR\//i.test(rawDesc) ||
+      /^NACH\s/i.test(rawDesc);
+
+    let type = 'expense'; // default debit
+    if (isCreditSignal && !isDebitSignal) type = 'income';
+
+    // Clean up description — extract meaningful merchant name from UPI string
+    const desc = cleanBankDesc(rawDesc);
+    const category = autoCategory(desc, type === 'income');
+
+    txns.push({
+      id: Date.now() + Math.random(),
+      date: isoDate,
+      desc,
+      category,
+      type,
+      amount: txnAmount,
+      mode: detectMode(rawDesc),
+      notes: '',
+      confirmed: true,
+    });
+  }
+
+  return txns;
+}
+
+// Clean up messy UPI/bank description strings into readable merchant names
+function cleanBankDesc(raw) {
+  // Extract merchant from UPI patterns like:
+  // UPI/DR/646728119180/THEENRAJ/KVBL/**71145@AXL/...
+  // UPI/CR/610647530275/RAKSHITHA/ICIC/**AVI97@OKICICI/...
+  // NEFT CR-IN22612537280677-ICIC0099999-JINDAL ALUMINIUM LTD
+  // NACH PLA10914600502 2BN8CMQ6XTKD11 CNRB...
+
+  // UPI: grab the 4th segment (merchant name)
+  const upiMatch = raw.match(/UPI\/(?:DR|CR|REF)\/\d+\/([^\/]+)/i);
+  if (upiMatch) {
+    const merchant = upiMatch[1].replace(/[_\*]/g, ' ').trim();
+    // Further cleanup common suffixes
+    return merchant
+      .replace(/\s+/g, ' ')
+      .replace(/LI$|LTD$|LIMITED$/i, '')
+      .trim()
+      .slice(0, 50) || 'UPI Transaction';
+  }
+
+  // NEFT: grab company name after last dash
+  const neftMatch = raw.match(/NEFT\s*(?:CR|DR)[^\-]*[-–]([^\-]+)[-–](.+)/i);
+  if (neftMatch) return (neftMatch[2] || neftMatch[1]).trim().slice(0, 50);
+
+  // NACH: grab scheme name
+  const nachMatch = raw.match(/NACH\s+([A-Z0-9]+)/i);
+  if (nachMatch) {
+    const name = nachMatch[1];
+    if (/CRED/i.test(name))       return 'CRED Payment';
+    if (/RAZOR/i.test(name))      return 'Razorpay Auto-debit';
+    if (/MUTHOOT/i.test(name))    return 'Muthoot Finance EMI';
+    if (/ADITYABIRLSL/i.test(name)) return 'Aditya Birla SL';
+    if (/PAISA/i.test(name))      return 'PaisaBazaar';
+    return 'Auto-debit: ' + name.slice(0, 30);
+  }
+
+  // Fallback: strip UPI technical noise
+  return raw
+    .replace(/UPI\/(?:DR|CR|REF)\/\d+\//gi, '')
+    .replace(/\/[A-Z]{4}\/\*{2}[^\/]+/g, '')
+    .replace(/VIA\/\/[A-Z0-9]+/gi, '')
+    .replace(/Chq:\s*\d+/gi, '')
+    .replace(/\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}:\d{2}/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+    .slice(0, 60) || 'Bank Transaction';
+}
+
+function detectMode(raw) {
+  if (/UPI/i.test(raw))  return 'UPI';
+  if (/NEFT/i.test(raw)) return 'NetBanking';
+  if (/NACH/i.test(raw)) return 'NetBanking';
+  if (/IMPS/i.test(raw)) return 'NetBanking';
+  if (/ATM|cash/i.test(raw)) return 'Cash';
+  if (/CARD|POS/i.test(raw)) return 'Card';
+  return 'NetBanking';
 }
 
 function extractSalaryData(text) {
-  const today  = new Date().toISOString().split('T')[0];
+  const today = new Date().toISOString().split('T')[0];
   let net = 0, gross = 0, desc = 'Salary';
-
-  // Try to find net/gross pay
-  const netMatch   = text.match(/net\s*(?:pay|salary|amount|take.?home)[^\d]*₹?\s*([\d,]+(?:\.\d+)?)/i);
-  const grossMatch = text.match(/gross\s*(?:pay|salary|earnings)[^\d]*₹?\s*([\d,]+(?:\.\d+)?)/i);
-  const basicMatch = text.match(/basic\s*(?:pay|salary)[^\d]*₹?\s*([\d,]+(?:\.\d+)?)/i);
-
-  if (netMatch)   net   = parseFloat(netMatch[1].replace(/,/g,''));
-  if (grossMatch) gross = parseFloat(grossMatch[1].replace(/,/g,''));
-
+  const netMatch   = text.match(/net\s*(?:pay|salary|amount|take.?home)[^\d]*(?:₹\s*)?([\d,]+(?:\.\d+)?)/i);
+  const grossMatch = text.match(/gross\s*(?:pay|salary|earnings)[^\d]*(?:₹\s*)?([\d,]+(?:\.\d+)?)/i);
+  if (netMatch)   net   = stripCommas(netMatch[1]);
+  if (grossMatch) gross = stripCommas(grossMatch[1]);
   const amount = net || gross || 0;
   if (!amount) return null;
-
-  // Try to extract month/year
   const monthMatch = text.match(/(january|february|march|april|may|june|july|august|september|october|november|december)\s*(\d{4})/i);
   if (monthMatch) desc = `Salary — ${monthMatch[1]} ${monthMatch[2]}`;
-
-  // Try to find employee name
-  const nameMatch = text.match(/employee\s*(?:name)?[:\s]+([A-Za-z\s]{3,30})/i);
+  const nameMatch = text.match(/(?:employee|name)[:\s]+([A-Za-z\s]{3,30})/i);
   if (nameMatch) desc = `Salary — ${nameMatch[1].trim()}`;
-
-  return { date:today, desc, category:'Salary', type:'income', amount, mode:'NetBanking', notes:`Imported from PDF. Gross: ₹${gross||'—'}`, confirmed:true };
+  return { date:today, desc, category:'Salary', type:'income', amount, mode:'NetBanking', notes:`From PDF. Gross: ₹${gross||'—'}`, confirmed:true };
 }
 
 function extractInvoiceData(text) {
   const today = new Date().toISOString().split('T')[0];
-
-  // Total amount
-  const totalMatch = text.match(/(?:grand\s*total|total\s*amount|amount\s*due|total)[^\d]*₹?\s*([\d,]+(?:\.\d+)?)/i);
+  const totalMatch = text.match(/(?:grand\s*total|total\s*amount|amount\s*due|net\s*total)[^\d]*(?:₹\s*)?([\d,]+(?:\.\d+)?)/i);
   if (!totalMatch) return null;
-  const amount = parseFloat(totalMatch[1].replace(/,/g,''));
-
-  // Vendor name — first decent-looking line
-  const lines  = text.split('\n').map(l => l.trim()).filter(l => l.length > 2 && l.length < 60);
+  const amount = stripCommas(totalMatch[1]);
+  if (!amount) return null;
+  const lines  = text.split('\n').map(l => l.trim()).filter(l => l.length > 2 && l.length < 80);
   const vendor = lines[0] || 'Invoice';
-
-  // Date
   const dateMatch = text.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
   let date = today;
   if (dateMatch) {
     const y = dateMatch[3].length === 2 ? '20'+dateMatch[3] : dateMatch[3];
     date = `${y}-${String(dateMatch[2]).padStart(2,'0')}-${String(dateMatch[1]).padStart(2,'0')}`;
   }
-
-  return { date, desc:vendor, category:'Other', type:'expense', amount, mode:'Card', notes:'Imported from PDF invoice', confirmed:true };
+  return { date, desc:vendor.slice(0,60), category:'Other', type:'expense', amount, mode:'Card', notes:'Imported from PDF invoice', confirmed:true };
 }
 
 function extractGenericAmounts(text) {
   const txns = [];
-  // Look for date + description + amount patterns
   const lines = text.split('\n').map(l => l.trim()).filter(l => l);
-  const dateRe   = /(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/;
-  const amountRe = /₹?\s*([\d,]+(?:\.\d{2})?)\s*(?:cr|dr|debit|credit)?/i;
 
   lines.forEach(line => {
-    const dMatch = line.match(dateRe);
-    const aMatch = line.match(amountRe);
-    if (dMatch && aMatch) {
-      const amount = parseFloat(aMatch[1].replace(/,/g,''));
-      if (amount < 1 || amount > 10000000) return;
-      const y = dMatch[3].length === 2 ? '20'+dMatch[3] : dMatch[3];
-      const date = `${y}-${String(dMatch[2]).padStart(2,'0')}-${String(dMatch[1]).padStart(2,'0')}`;
-      const isCr = /cr|credit/i.test(line);
-      const desc = line.replace(dateRe,'').replace(amountRe,'').replace(/[^a-zA-Z0-9\s\-\/&]/g,'').trim().slice(0,60) || 'Transaction';
-      txns.push({ date, desc, category: isCr ? 'Other' : 'Other', type: isCr ? 'income' : 'expense', amount, mode:'Other', notes:'Imported from PDF', confirmed:true });
-    }
+    // Date pattern DD-MM-YYYY or DD/MM/YYYY
+    const dMatch = line.match(/(\d{2})[-\/](\d{2})[-\/](\d{4})/);
+    if (!dMatch) return;
+    const date = `${dMatch[3]}-${dMatch[2]}-${dMatch[1]}`;
+
+    // Find all money-like values in the line (Indian format: 1,23,456.78)
+    const allAmounts = [...line.matchAll(/\b(\d{1,3}(?:,\d{2,3})*(?:\.\d{1,2})?)\b/g)]
+      .map(m => stripCommas(m[1]))
+      .filter(n => n >= 1 && n <= 50000000);
+
+    if (!allAmounts.length) return;
+
+    // Take the largest non-balance amount (assume balance is last/largest in statement lines)
+    // Use second-to-last if multiple, otherwise first
+    const amount = allAmounts.length >= 2
+      ? allAmounts[allAmounts.length - 2]
+      : allAmounts[0];
+
+    if (!amount) return;
+
+    const isCr = /\/CR\/|UPI\/CR|CREDIT|NEFT CR/i.test(line);
+    const type = isCr ? 'income' : 'expense';
+    const desc = cleanBankDesc(line.replace(/(\d{2})[-\/](\d{2})[-\/](\d{4})/g, '').trim()) || 'Transaction';
+
+    txns.push({ id:Date.now()+Math.random(), date, desc, category:autoCategory(desc, isCr), type, amount, mode:detectMode(line), notes:'', confirmed:true });
   });
 
-  return txns.slice(0, 50);
+  return txns.slice(0, 200);
 }
 
 function showPDFManualEntry(text) {
@@ -1581,11 +1796,23 @@ function parseAnyDate(raw) {
 }
 
 // ── MONEY PARSER ──
+// Handles Indian format: 1,83,767.22 → 183767.22
+// Also handles plain numbers, negative values in parens
 function parseMoney(raw) {
-  if (!raw && raw !== 0) return 0;
-  const s = String(raw).replace(/[₹,\s]/g,'').replace(/[()]/g, s => s === '(' ? '-' : '');
-  const n = parseFloat(s);
+  if (raw === null || raw === undefined || raw === '') return 0;
+  const s = String(raw)
+    .replace(/₹/g, '')
+    .replace(/\s/g, '')
+    .replace(/\((\d[\d,.]*)\)/, '-$1'); // (500.00) → -500.00
+  // Remove ALL commas before parsing — handles both 1,000 and 1,00,000
+  const cleaned = s.replace(/,/g, '');
+  const n = parseFloat(cleaned);
   return isNaN(n) ? 0 : n;
+}
+
+// Alias used in PDF extractor
+function stripCommas(s) {
+  return parseMoney(s);
 }
 
 // ── HOOK INTO NAVIGATION ──
