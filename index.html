@@ -145,6 +145,11 @@
     <a href="#" class="nav-item" data-page="networth"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>Net Worth</a>
     <a href="#" class="nav-item" data-page="insights"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>Insights</a>
     <div class="nav-section-label">Tools</div>
+    <a href="#" class="nav-item" data-page="import">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Import
+      <span class="nav-badge">New</span>
+    </a>
     <a href="#" class="nav-item" data-page="ledger"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10,9 9,9 8,9"/></svg>Ledger</a>
   </nav>
   <div class="sidebar-bottom">
@@ -356,6 +361,137 @@
   <div class="page" id="page-ledger">
     <div class="page-header"><div><h1 class="page-title">Historical Ledger</h1><p class="page-sub">Complete record grouped by month</p></div><button class="btn-outline" onclick="exportCSV()">↓ Export CSV</button></div>
     <div id="ledgerContent"></div>
+  </div>
+
+  <!-- IMPORT -->
+  <div class="page" id="page-import">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Import Transactions</h1>
+        <p class="page-sub">Upload a bank statement (CSV) or salary slip / invoice (PDF) — review and edit before saving</p>
+      </div>
+    </div>
+
+    <!-- STEP INDICATOR -->
+    <div class="import-steps" id="importSteps">
+      <div class="import-step active" id="step-ind-1"><span class="step-num">1</span><span class="step-label">Upload File</span></div>
+      <div class="import-step-line"></div>
+      <div class="import-step" id="step-ind-2"><span class="step-num">2</span><span class="step-label">Map Columns</span></div>
+      <div class="import-step-line"></div>
+      <div class="import-step" id="step-ind-3"><span class="step-num">3</span><span class="step-label">Review & Edit</span></div>
+      <div class="import-step-line"></div>
+      <div class="import-step" id="step-ind-4"><span class="step-num">4</span><span class="step-label">Save</span></div>
+    </div>
+
+    <!-- STEP 1: UPLOAD -->
+    <div class="import-panel" id="import-step-1">
+      <div class="upload-zone" id="uploadZone">
+        <div class="upload-zone-inner">
+          <div class="upload-icon">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          </div>
+          <div class="upload-title">Drop your file here</div>
+          <div class="upload-sub">or click to browse</div>
+          <div class="upload-types">
+            <span class="upload-type-badge">CSV</span>
+            <span class="upload-type-badge">PDF</span>
+            <span class="upload-type-badge">XLS / XLSX</span>
+          </div>
+          <input type="file" id="fileInput" accept=".csv,.pdf,.xls,.xlsx" style="display:none" onchange="handleFileSelect(this.files[0])">
+          <button class="btn-primary" style="margin-top:16px" onclick="document.getElementById('fileInput').click()">Choose File</button>
+        </div>
+      </div>
+      <div class="import-info-cards">
+        <div class="import-info-card">
+          <div class="iic-icon">🏦</div>
+          <div class="iic-title">Bank Statement CSV</div>
+          <div class="iic-body">Download from your bank's netbanking portal. Works with HDFC, ICICI, SBI, Axis, Kotak, Yes Bank, and any CSV format. Auto-detected.</div>
+        </div>
+        <div class="import-info-card">
+          <div class="iic-icon">📄</div>
+          <div class="iic-title">Salary Slip PDF</div>
+          <div class="iic-body">Upload your salary slip PDF. Finio will extract gross pay, deductions, and net salary. You can edit any field before saving.</div>
+        </div>
+        <div class="import-info-card">
+          <div class="iic-icon">🧾</div>
+          <div class="iic-title">Invoice / Receipt PDF</div>
+          <div class="iic-body">Upload any invoice or receipt PDF. Finio will attempt to extract vendor name, date, and total amount for quick transaction entry.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 2: COLUMN MAPPER -->
+    <div class="import-panel" id="import-step-2" style="display:none">
+      <div class="import-panel-header">
+        <div>
+          <div class="import-panel-title" id="mapperTitle">Map Your Columns</div>
+          <div class="import-panel-sub" id="mapperSub">Tell Finio which column is which. Auto-detected where possible.</div>
+        </div>
+        <button class="btn-outline" onclick="resetImport()">← Start Over</button>
+      </div>
+      <div class="mapper-detected-badge" id="mapperBadge" style="display:none">
+        <span>✓ Bank format auto-detected — </span><span id="mapperBankName"></span>
+      </div>
+      <div class="mapper-grid" id="mapperGrid"></div>
+      <div class="import-preview-wrap">
+        <div class="import-preview-label">Preview (first 3 rows)</div>
+        <div class="import-preview-table-wrap"><table class="import-preview-table" id="previewTable"></table></div>
+      </div>
+      <div class="import-actions">
+        <button class="btn-outline" onclick="resetImport()">Cancel</button>
+        <button class="btn-primary" onclick="proceedToReview()">Continue to Review →</button>
+      </div>
+    </div>
+
+    <!-- STEP 3: REVIEW & EDIT -->
+    <div class="import-panel" id="import-step-3" style="display:none">
+      <div class="import-panel-header">
+        <div>
+          <div class="import-panel-title">Review Transactions</div>
+          <div class="import-panel-sub" id="reviewSub">Edit any row before importing. Uncheck rows you don't want.</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <button class="btn-outline" style="font-size:12px" onclick="selectAllReview(true)">Select All</button>
+          <button class="btn-outline" style="font-size:12px" onclick="selectAllReview(false)">Deselect All</button>
+          <button class="btn-outline" onclick="resetImport()">← Start Over</button>
+        </div>
+      </div>
+      <div class="review-stats" id="reviewStats"></div>
+      <div class="review-table-wrap">
+        <table class="review-table" id="reviewTable">
+          <thead>
+            <tr>
+              <th style="width:36px"><input type="checkbox" id="reviewSelectAll" onchange="selectAllReview(this.checked)" checked></th>
+              <th>Date</th>
+              <th>Description</th>
+              <th>Category</th>
+              <th>Type</th>
+              <th>Amount (₹)</th>
+              <th>Mode</th>
+            </tr>
+          </thead>
+          <tbody id="reviewTableBody"></tbody>
+        </table>
+      </div>
+      <div class="import-actions">
+        <button class="btn-outline" onclick="goToStep(2)">← Back</button>
+        <button class="btn-primary" onclick="confirmImport()" id="confirmImportBtn">Import Selected Transactions</button>
+      </div>
+    </div>
+
+    <!-- STEP 4: SUCCESS -->
+    <div class="import-panel" id="import-step-4" style="display:none">
+      <div class="import-success">
+        <div class="import-success-icon">✅</div>
+        <div class="import-success-title" id="successTitle">Transactions Imported!</div>
+        <div class="import-success-sub" id="successSub"></div>
+        <div style="display:flex;gap:12px;justify-content:center;margin-top:24px">
+          <button class="btn-outline" onclick="resetImport()">Import Another File</button>
+          <button class="btn-primary" onclick="navigate('transactions')">View Transactions →</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 
 </main>

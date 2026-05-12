@@ -931,3 +931,669 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById(id)?.addEventListener('keydown', e => { if(e.key==='Enter') handleRegister(); });
   });
 });
+
+/* ══════════════════════════════════════
+   IMPORT ENGINE
+   ══════════════════════════════════════ */
+
+// Global import state
+const IMPORT = {
+  rawRows: [],       // parsed CSV rows (array of arrays)
+  headers: [],       // CSV header row
+  mappings: {},      // { date, description, debit, credit, amount, type }
+  parsedTxns: [],    // after mapping applied
+  fileType: null,    // 'csv' | 'pdf'
+  fileName: '',
+  pdfText: '',       // raw extracted PDF text
+};
+
+// ── STEP MANAGEMENT ──
+function goToStep(n) {
+  [1,2,3,4].forEach(i => {
+    document.getElementById(`import-step-${i}`).style.display = i === n ? 'block' : 'none';
+    const ind = document.getElementById(`step-ind-${i}`);
+    ind.className = 'import-step' + (i === n ? ' active' : i < n ? ' done' : '');
+  });
+}
+
+function resetImport() {
+  IMPORT.rawRows = []; IMPORT.headers = []; IMPORT.mappings = {};
+  IMPORT.parsedTxns = []; IMPORT.fileType = null; IMPORT.pdfText = '';
+  document.getElementById('fileInput').value = '';
+  goToStep(1);
+}
+
+// ── DRAG & DROP ──
+function initDropZone() {
+  const zone = document.getElementById('uploadZone');
+  if (!zone) return;
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('drag-over');
+    const f = e.dataTransfer.files[0];
+    if (f) handleFileSelect(f);
+  });
+  zone.addEventListener('click', e => {
+    if (e.target.tagName !== 'BUTTON') document.getElementById('fileInput').click();
+  });
+}
+
+// ── FILE HANDLER ──
+function handleFileSelect(file) {
+  if (!file) return;
+  IMPORT.fileName = file.name;
+  const ext = file.name.split('.').pop().toLowerCase();
+
+  if (ext === 'pdf') {
+    IMPORT.fileType = 'pdf';
+    readPDF(file);
+  } else if (ext === 'csv' || ext === 'txt') {
+    IMPORT.fileType = 'csv';
+    readCSV(file);
+  } else if (ext === 'xls' || ext === 'xlsx') {
+    IMPORT.fileType = 'csv';
+    readExcel(file);
+  } else {
+    showToast('Unsupported file type. Please use CSV, PDF, XLS, or XLSX.', 'error');
+  }
+}
+
+// ── CSV READER ──
+function readCSV(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const text = e.target.result;
+    const rows = parseCSVText(text);
+    if (rows.length < 2) { showToast('CSV appears empty or unreadable.', 'error'); return; }
+    processCSVRows(rows);
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+function parseCSVText(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  return lines.map(line => {
+    const cols = []; let cur = ''; let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') { inQ = !inQ; }
+      else if ((ch === ',' || ch === '\t') && !inQ) { cols.push(cur.trim()); cur = ''; }
+      else cur += ch;
+    }
+    cols.push(cur.trim());
+    return cols.map(c => c.replace(/^"|"$/g, '').trim());
+  });
+}
+
+// ── EXCEL READER ──
+function readExcel(file) {
+  // Load SheetJS dynamically if not already loaded
+  if (window.XLSX) {
+    doReadExcel(file);
+  } else {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = () => doReadExcel(file);
+    s.onerror = () => showToast('Could not load Excel reader. Try saving as CSV first.', 'error');
+    document.head.appendChild(s);
+  }
+}
+
+function doReadExcel(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      const strRows = rows.map(r => r.map(c => String(c).trim()));
+      if (strRows.length < 2) { showToast('Excel appears empty.', 'error'); return; }
+      processCSVRows(strRows);
+    } catch(err) { showToast('Could not read Excel file. Try exporting as CSV.', 'error'); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ── PDF READER ──
+function readPDF(file) {
+  if (window.pdfjsLib) {
+    doPDFRead(file);
+  } else {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = () => {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      doPDFRead(file);
+    };
+    s.onerror = () => showToast('Could not load PDF reader library.', 'error');
+    document.head.appendChild(s);
+  }
+}
+
+async function doPDFRead(file) {
+  showToast('Reading PDF…');
+  try {
+    const arrayBuf = await file.arrayBuffer();
+    const pdf      = await pdfjsLib.getDocument({ data: arrayBuf }).promise;
+    let fullText   = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page    = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = content.items.map(s => s.str).join(' ');
+      fullText += pageText + '\n';
+    }
+    IMPORT.pdfText = fullText;
+    processPDFText(fullText);
+  } catch(err) {
+    showToast('Could not read PDF. Make sure it is not password-protected.', 'error');
+  }
+}
+
+// ── PDF TEXT PROCESSOR ──
+function processPDFText(text) {
+  const lower = text.toLowerCase();
+  const extracted = [];
+
+  // Attempt salary slip detection
+  const isSalarySlip = /salary|payslip|pay slip|net pay|gross|ctc|basic pay|deduction/i.test(lower);
+
+  if (isSalarySlip) {
+    const salaryTxn = extractSalaryData(text);
+    if (salaryTxn) extracted.push(salaryTxn);
+  }
+
+  // Attempt invoice/receipt detection
+  const isInvoice = /invoice|receipt|total|amount due|bill to|grand total/i.test(lower);
+  if (isInvoice) {
+    const invTxn = extractInvoiceData(text);
+    if (invTxn) extracted.push(invTxn);
+  }
+
+  // Generic: look for any date + amount patterns
+  if (!extracted.length) {
+    const genericTxns = extractGenericAmounts(text);
+    extracted.push(...genericTxns);
+  }
+
+  if (!extracted.length) {
+    // Fall back — show raw text and let user create manually
+    showPDFManualEntry(text);
+    return;
+  }
+
+  // Go to review with extracted transactions
+  IMPORT.parsedTxns = extracted;
+  buildReviewTable();
+  goToStep(3);
+}
+
+function extractSalaryData(text) {
+  const today  = new Date().toISOString().split('T')[0];
+  let net = 0, gross = 0, desc = 'Salary';
+
+  // Try to find net/gross pay
+  const netMatch   = text.match(/net\s*(?:pay|salary|amount|take.?home)[^\d]*₹?\s*([\d,]+(?:\.\d+)?)/i);
+  const grossMatch = text.match(/gross\s*(?:pay|salary|earnings)[^\d]*₹?\s*([\d,]+(?:\.\d+)?)/i);
+  const basicMatch = text.match(/basic\s*(?:pay|salary)[^\d]*₹?\s*([\d,]+(?:\.\d+)?)/i);
+
+  if (netMatch)   net   = parseFloat(netMatch[1].replace(/,/g,''));
+  if (grossMatch) gross = parseFloat(grossMatch[1].replace(/,/g,''));
+
+  const amount = net || gross || 0;
+  if (!amount) return null;
+
+  // Try to extract month/year
+  const monthMatch = text.match(/(january|february|march|april|may|june|july|august|september|october|november|december)\s*(\d{4})/i);
+  if (monthMatch) desc = `Salary — ${monthMatch[1]} ${monthMatch[2]}`;
+
+  // Try to find employee name
+  const nameMatch = text.match(/employee\s*(?:name)?[:\s]+([A-Za-z\s]{3,30})/i);
+  if (nameMatch) desc = `Salary — ${nameMatch[1].trim()}`;
+
+  return { date:today, desc, category:'Salary', type:'income', amount, mode:'NetBanking', notes:`Imported from PDF. Gross: ₹${gross||'—'}`, confirmed:true };
+}
+
+function extractInvoiceData(text) {
+  const today = new Date().toISOString().split('T')[0];
+
+  // Total amount
+  const totalMatch = text.match(/(?:grand\s*total|total\s*amount|amount\s*due|total)[^\d]*₹?\s*([\d,]+(?:\.\d+)?)/i);
+  if (!totalMatch) return null;
+  const amount = parseFloat(totalMatch[1].replace(/,/g,''));
+
+  // Vendor name — first decent-looking line
+  const lines  = text.split('\n').map(l => l.trim()).filter(l => l.length > 2 && l.length < 60);
+  const vendor = lines[0] || 'Invoice';
+
+  // Date
+  const dateMatch = text.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
+  let date = today;
+  if (dateMatch) {
+    const y = dateMatch[3].length === 2 ? '20'+dateMatch[3] : dateMatch[3];
+    date = `${y}-${String(dateMatch[2]).padStart(2,'0')}-${String(dateMatch[1]).padStart(2,'0')}`;
+  }
+
+  return { date, desc:vendor, category:'Other', type:'expense', amount, mode:'Card', notes:'Imported from PDF invoice', confirmed:true };
+}
+
+function extractGenericAmounts(text) {
+  const txns = [];
+  // Look for date + description + amount patterns
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  const dateRe   = /(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/;
+  const amountRe = /₹?\s*([\d,]+(?:\.\d{2})?)\s*(?:cr|dr|debit|credit)?/i;
+
+  lines.forEach(line => {
+    const dMatch = line.match(dateRe);
+    const aMatch = line.match(amountRe);
+    if (dMatch && aMatch) {
+      const amount = parseFloat(aMatch[1].replace(/,/g,''));
+      if (amount < 1 || amount > 10000000) return;
+      const y = dMatch[3].length === 2 ? '20'+dMatch[3] : dMatch[3];
+      const date = `${y}-${String(dMatch[2]).padStart(2,'0')}-${String(dMatch[1]).padStart(2,'0')}`;
+      const isCr = /cr|credit/i.test(line);
+      const desc = line.replace(dateRe,'').replace(amountRe,'').replace(/[^a-zA-Z0-9\s\-\/&]/g,'').trim().slice(0,60) || 'Transaction';
+      txns.push({ date, desc, category: isCr ? 'Other' : 'Other', type: isCr ? 'income' : 'expense', amount, mode:'Other', notes:'Imported from PDF', confirmed:true });
+    }
+  });
+
+  return txns.slice(0, 50);
+}
+
+function showPDFManualEntry(text) {
+  // Show step 2 in PDF manual mode
+  goToStep(2);
+  document.getElementById('mapperTitle').textContent = 'PDF — Manual Entry';
+  document.getElementById('mapperSub').textContent   = 'We could not auto-extract transactions. Review the raw text below and add transactions manually.';
+
+  document.getElementById('mapperGrid').innerHTML = `
+    <div class="pdf-extract-box" style="grid-column:1/-1">
+      <div class="pdf-extract-title">📄 Extracted Text from ${escHtml(IMPORT.fileName)}</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Review the text below and manually add transactions using the + Add Transaction button.</div>
+      <div class="pdf-raw-text">${escHtml(text.slice(0, 3000))}${text.length > 3000 ? '\n\n[Truncated…]' : ''}</div>
+    </div>`;
+
+  document.getElementById('import-preview-wrap') && (document.getElementById('import-preview-wrap').style.display = 'none');
+  document.querySelector('#import-step-2 .import-actions').innerHTML = `
+    <button class="btn-outline" onclick="resetImport()">Cancel</button>
+    <button class="btn-primary" onclick="navigate('transactions');closeModal&&closeModal();showToast('Use + Add Transaction to enter manually')">Go to Transactions →</button>`;
+}
+
+// ── CSV PROCESSOR ──
+function processCSVRows(rows) {
+  // Find header row — skip leading blank/metadata rows
+  let headerIdx = 0;
+  for (let i = 0; i < Math.min(10, rows.length); i++) {
+    const nonEmpty = rows[i].filter(c => c && c.length > 0).length;
+    if (nonEmpty >= 3) { headerIdx = i; break; }
+  }
+
+  IMPORT.headers = rows[headerIdx].map(h => String(h).trim());
+  IMPORT.rawRows = rows.slice(headerIdx + 1).filter(r => r.some(c => c && c.trim()));
+
+  if (!IMPORT.rawRows.length) { showToast('No data rows found in file.', 'error'); return; }
+
+  // Auto-detect bank format
+  const detected = detectBankFormat(IMPORT.headers);
+  IMPORT.mappings = detected.mappings;
+
+  buildColumnMapper(detected);
+  goToStep(2);
+}
+
+// ── BANK FORMAT DETECTOR ──
+function detectBankFormat(headers) {
+  const h = headers.map(x => x.toLowerCase());
+  const join = h.join('|');
+
+  // HDFC Bank
+  if (join.includes('narration') && (join.includes('withdrawal') || join.includes('debit'))) {
+    return { bank:'HDFC Bank', mappings:{ date:findCol(h,['date','txn date','value date']), description:findCol(h,['narration','description','particulars']), debit:findCol(h,['withdrawal amt','withdrawal','debit','debit amt']), credit:findCol(h,['deposit amt','deposit','credit','credit amt']), balance:findCol(h,['closing balance','balance']) } };
+  }
+  // ICICI Bank
+  if (join.includes('transaction date') || join.includes('s no')) {
+    return { bank:'ICICI Bank', mappings:{ date:findCol(h,['transaction date','value date','date']), description:findCol(h,['transaction remarks','remarks','description','narration']), debit:findCol(h,['debit','withdrawal']), credit:findCol(h,['credit','deposit']), amount:findCol(h,['amount']) } };
+  }
+  // SBI
+  if (join.includes('txn date') || (join.includes('ref no') && join.includes('description'))) {
+    return { bank:'SBI', mappings:{ date:findCol(h,['txn date','value date','date']), description:findCol(h,['description','narration','particulars']), debit:findCol(h,['debit','dr']), credit:findCol(h,['credit','cr']), balance:findCol(h,['balance']) } };
+  }
+  // Axis Bank
+  if (join.includes('tran date') || join.includes('chq/ref number')) {
+    return { bank:'Axis Bank', mappings:{ date:findCol(h,['tran date','transaction date','date']), description:findCol(h,['particulars','narration','description']), debit:findCol(h,['debit','withdrawal']), credit:findCol(h,['credit','deposit']), balance:findCol(h,['balance']) } };
+  }
+  // Kotak
+  if (join.includes('transaction id') && join.includes('remarks')) {
+    return { bank:'Kotak Bank', mappings:{ date:findCol(h,['transaction date','date']), description:findCol(h,['remarks','narration','description']), debit:findCol(h,['debit','dr']), credit:findCol(h,['credit','cr']), amount:findCol(h,['amount']) } };
+  }
+  // Generic: try to find common column names
+  return { bank:null, mappings:{
+    date:    findCol(h,['date','txn date','transaction date','value date','posting date']),
+    description: findCol(h,['description','narration','remarks','particulars','details','memo','transaction remarks']),
+    debit:   findCol(h,['debit','withdrawal','dr','amount (dr)','debit amount','debit amt']),
+    credit:  findCol(h,['credit','deposit','cr','amount (cr)','credit amount','credit amt']),
+    amount:  findCol(h,['amount','transaction amount']),
+    type:    findCol(h,['type','transaction type','dr/cr']),
+  }};
+}
+
+function findCol(headers, candidates) {
+  for (const c of candidates) {
+    const idx = headers.findIndex(h => h.includes(c));
+    if (idx !== -1) return idx;
+  }
+  return -1;
+}
+
+// ── COLUMN MAPPER UI ──
+function buildColumnMapper(detected) {
+  const badge = document.getElementById('mapperBadge');
+  if (detected.bank) {
+    badge.style.display = 'flex';
+    document.getElementById('mapperBankName').textContent = detected.bank + ' format detected';
+  } else {
+    badge.style.display = 'none';
+  }
+
+  document.getElementById('mapperTitle').textContent = `Map Columns — ${IMPORT.fileName}`;
+  document.getElementById('mapperSub').textContent   = `${IMPORT.rawRows.length} rows found. Assign each field to the right column.`;
+
+  const opts = ['— Not in file —', ...IMPORT.headers].map((h,i) => `<option value="${i-1}">${h}</option>`).join('');
+
+  const fields = [
+    { key:'date',        label:'Date',           required:true  },
+    { key:'description', label:'Description',     required:true  },
+    { key:'debit',       label:'Debit / Withdrawal', required:false },
+    { key:'credit',      label:'Credit / Deposit',   required:false },
+    { key:'amount',      label:'Amount (combined)',   required:false },
+    { key:'type',        label:'Dr/Cr Type column',  required:false },
+    { key:'balance',     label:'Balance (optional)', required:false },
+  ];
+
+  document.getElementById('mapperGrid').innerHTML = fields.map(f => {
+    const sel = detected.mappings[f.key] !== undefined ? detected.mappings[f.key] : -1;
+    return `
+      <div class="mapper-field">
+        <div class="mapper-field-label">
+          ${f.label}
+          ${f.required ? '<span class="mapper-required">required</span>' : ''}
+        </div>
+        <select id="map_${f.key}" onchange="updatePreviewTable()">
+          ${['— Not in file —', ...IMPORT.headers].map((h,i) => `<option value="${i-1}" ${i-1 === sel ? 'selected' : ''}>${h}</option>`).join('')}
+        </select>
+      </div>`;
+  }).join('');
+
+  updatePreviewTable();
+}
+
+function updatePreviewTable() {
+  const preview = IMPORT.rawRows.slice(0, 3);
+  const tbl = document.getElementById('previewTable');
+  if (!tbl) return;
+  const getMapped = key => { const el = document.getElementById('map_'+key); return el ? parseInt(el.value) : -1; };
+  const hdr = ['Date','Description','Debit','Credit','Amount','Type'].map(h => `<th>${h}</th>`).join('');
+  const rows = preview.map(r => {
+    const get = idx => idx >= 0 && idx < r.length ? (r[idx] || '—') : '—';
+    return `<tr>
+      <td>${get(getMapped('date'))}</td>
+      <td>${get(getMapped('description'))}</td>
+      <td>${get(getMapped('debit'))}</td>
+      <td>${get(getMapped('credit'))}</td>
+      <td>${get(getMapped('amount'))}</td>
+      <td>${get(getMapped('type'))}</td>
+    </tr>`;
+  }).join('');
+  tbl.innerHTML = `<thead><tr>${hdr}</tr></thead><tbody>${rows}</tbody>`;
+}
+
+// ── PROCEED TO REVIEW ──
+function proceedToReview() {
+  const getMapped = key => { const el = document.getElementById('map_'+key); return el ? parseInt(el.value) : -1; };
+  const dateIdx   = getMapped('date');
+  const descIdx   = getMapped('description');
+  const debitIdx  = getMapped('debit');
+  const creditIdx = getMapped('credit');
+  const amtIdx    = getMapped('amount');
+  const typeIdx   = getMapped('type');
+
+  if (dateIdx < 0)                                          { showToast('Please map the Date column', 'error');       return; }
+  if (descIdx < 0)                                          { showToast('Please map the Description column', 'error');return; }
+  if (debitIdx < 0 && creditIdx < 0 && amtIdx < 0)         { showToast('Map at least one Amount column', 'error');   return; }
+
+  const txns = [];
+  IMPORT.rawRows.forEach(row => {
+    const dateRaw = row[dateIdx] || '';
+    const desc    = (row[descIdx] || '').trim();
+    if (!dateRaw || !desc) return;
+
+    const date = parseAnyDate(dateRaw);
+    if (!date) return;
+
+    let debit = 0, credit = 0;
+    if (amtIdx >= 0) {
+      const amt = parseMoney(row[amtIdx]);
+      // Use type column or sign to determine direction
+      if (typeIdx >= 0) {
+        const t = (row[typeIdx] || '').toLowerCase();
+        if (t.includes('cr') || t.includes('credit')) credit = Math.abs(amt);
+        else debit = Math.abs(amt);
+      } else {
+        if (amt < 0) debit = Math.abs(amt);
+        else credit = amt;
+      }
+    } else {
+      debit  = debitIdx  >= 0 ? parseMoney(row[debitIdx])  : 0;
+      credit = creditIdx >= 0 ? parseMoney(row[creditIdx]) : 0;
+    }
+
+    const isCredit = credit > 0 && debit <= 0;
+    const amount   = isCredit ? credit : debit;
+    if (!amount || amount <= 0) return;
+
+    txns.push({
+      id: Date.now() + Math.random(),
+      date,
+      desc,
+      category: autoCategory(desc, isCredit),
+      type: isCredit ? 'income' : 'expense',
+      amount,
+      mode: 'NetBanking',
+      notes: '',
+      confirmed: true,
+    });
+  });
+
+  if (!txns.length) { showToast('No valid transactions found. Check your column mapping.', 'error'); return; }
+
+  IMPORT.parsedTxns = txns;
+  buildReviewTable();
+  goToStep(3);
+}
+
+// ── AUTO CATEGORY ──
+function autoCategory(desc, isCredit) {
+  if (isCredit) {
+    if (/salary|sal|payroll/i.test(desc))     return 'Salary';
+    if (/freelance|consulting|project/i.test(desc)) return 'Freelance';
+    return 'Other';
+  }
+  const d = desc.toLowerCase();
+  if (/zomato|swiggy|food|restaurant|cafe|hotel|domino|pizza|mcdonald|kfc|dining/i.test(d)) return 'Food';
+  if (/ola|uber|cab|metro|railway|irctc|flight|bus|fuel|petrol|diesel|parking/i.test(d))    return 'Transport';
+  if (/amazon|flipkart|myntra|ajio|nykaa|meesho|shop|store|market/i.test(d))                return 'Shopping';
+  if (/netflix|hotstar|disney|prime|spotify|youtube|zee|sony/i.test(d))                     return 'Subscriptions';
+  if (/electricity|water|gas|bill|bsnl|airtel|jio|recharge|broadband/i.test(d))             return 'Utilities';
+  if (/hospital|clinic|pharmacy|medical|health|doctor/i.test(d))                            return 'Health';
+  if (/emi|loan|hdfc loan|sbi loan|kotak loan/i.test(d))                                    return 'EMI';
+  if (/rent|house|flat|pg|hostel/i.test(d))                                                 return 'Rent';
+  if (/sip|mutual fund|investment|mf|elss|nps|ppf/i.test(d))                               return 'Investment';
+  if (/atm|cash/i.test(d))                                                                   return 'Other';
+  return 'Other';
+}
+
+// ── REVIEW TABLE ──
+function buildReviewTable() {
+  const catOptions = ['Food','Transport','Shopping','Entertainment','Utilities','Health','Subscriptions','EMI','Rent','Investment','Salary','Freelance','Other'].map(c => `<option value="${c}">${c}</option>`).join('');
+  const modeOptions = ['UPI','Card','NetBanking','Cash','EMI','Other'].map(m => `<option value="${m}">${m}</option>`).join('');
+
+  const tbody = document.getElementById('reviewTableBody');
+  tbody.innerHTML = IMPORT.parsedTxns.map((t, idx) => `
+    <tr id="rrow-${idx}">
+      <td><input type="checkbox" class="rev-check" data-idx="${idx}" checked onchange="toggleReviewRow(${idx},this.checked)"></td>
+      <td><input type="date"   class="rev-date"  data-idx="${idx}" value="${t.date}" onchange="updateReviewField(${idx},'date',this.value)" style="width:130px"></td>
+      <td><input type="text"   class="rev-desc"  data-idx="${idx}" value="${escHtml(t.desc)}" onchange="updateReviewField(${idx},'desc',this.value)" style="min-width:180px"></td>
+      <td>
+        <select class="rev-cat" data-idx="${idx}" onchange="updateReviewField(${idx},'category',this.value)" style="width:120px">
+          ${catOptions.replace(`value="${t.category}"`, `value="${t.category}" selected`)}
+        </select>
+      </td>
+      <td>
+        <div class="review-type-toggle" style="display:flex;gap:4px">
+          <button class="review-type-btn income ${t.type==='income'?'active':''}" onclick="setReviewType(${idx},'income',this)">In</button>
+          <button class="review-type-btn expense ${t.type==='expense'?'active':''}" onclick="setReviewType(${idx},'expense',this)">Out</button>
+        </div>
+      </td>
+      <td><input type="number" class="rev-amt" data-idx="${idx}" value="${t.amount}" onchange="updateReviewField(${idx},'amount',parseFloat(this.value))" style="width:100px"></td>
+      <td>
+        <select class="rev-mode" data-idx="${idx}" onchange="updateReviewField(${idx},'mode',this.value)" style="width:110px">
+          ${modeOptions.replace(`value="${t.mode}"`, `value="${t.mode}" selected`)}
+        </select>
+      </td>
+    </tr>`).join('');
+
+  updateReviewStats();
+  document.getElementById('reviewSub').textContent = `${IMPORT.parsedTxns.length} transactions found in ${IMPORT.fileName}. Edit any field inline.`;
+}
+
+function updateReviewField(idx, key, val) {
+  IMPORT.parsedTxns[idx][key] = val;
+  updateReviewStats();
+}
+
+function setReviewType(idx, type, btn) {
+  IMPORT.parsedTxns[idx].type = type;
+  const row = document.getElementById(`rrow-${idx}`);
+  row.querySelectorAll('.review-type-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  updateReviewStats();
+}
+
+function toggleReviewRow(idx, checked) {
+  IMPORT.parsedTxns[idx].confirmed = checked;
+  document.getElementById(`rrow-${idx}`).className = checked ? '' : 'deselected';
+  updateReviewStats();
+}
+
+function selectAllReview(val) {
+  IMPORT.parsedTxns.forEach((t, idx) => {
+    t.confirmed = val;
+    document.getElementById(`rrow-${idx}`).className = val ? '' : 'deselected';
+    const cb = document.querySelector(`.rev-check[data-idx="${idx}"]`);
+    if (cb) cb.checked = val;
+  });
+  document.getElementById('reviewSelectAll').checked = val;
+  updateReviewStats();
+}
+
+function updateReviewStats() {
+  const selected = IMPORT.parsedTxns.filter(t => t.confirmed);
+  const income   = selected.filter(t => t.type === 'income').reduce((s,t) => s + t.amount, 0);
+  const expense  = selected.filter(t => t.type === 'expense').reduce((s,t) => s + t.amount, 0);
+  document.getElementById('reviewStats').innerHTML = `
+    <div class="review-stat-item"><span class="review-stat-label">Selected</span><span class="review-stat-value">${selected.length} / ${IMPORT.parsedTxns.length}</span></div>
+    <div class="review-stat-item"><span class="review-stat-label">Total Income</span><span class="review-stat-value income">${fmt(income)}</span></div>
+    <div class="review-stat-item"><span class="review-stat-label">Total Expenses</span><span class="review-stat-value expense">${fmt(expense)}</span></div>
+    <div class="review-stat-item"><span class="review-stat-label">Net</span><span class="review-stat-value" style="color:${income-expense>=0?'var(--accent)':'var(--danger)'}">${fmt(income-expense)}</span></div>`;
+  document.getElementById('confirmImportBtn').textContent = `Import ${selected.length} Transaction${selected.length!==1?'s':''}`;
+}
+
+// ── CONFIRM IMPORT ──
+function confirmImport() {
+  const toSave = IMPORT.parsedTxns.filter(t => t.confirmed && t.amount > 0);
+  if (!toSave.length) { showToast('No transactions selected to import.', 'error'); return; }
+
+  // Deduplicate against existing transactions
+  const existing = new Set(STATE.transactions.map(t => `${t.date}|${t.amount}|${t.desc.slice(0,20)}`));
+  let dupes = 0;
+  const fresh = toSave.filter(t => {
+    const key = `${t.date}|${t.amount}|${t.desc.slice(0,20)}`;
+    if (existing.has(key)) { dupes++; return false; }
+    return true;
+  });
+
+  fresh.forEach(t => {
+    STATE.transactions.unshift({ id:Date.now()+Math.random(), type:t.type, amount:t.amount, desc:t.desc, category:t.category, date:t.date, mode:t.mode, notes:t.notes||'', recurring:false });
+  });
+
+  // Sort by date desc
+  STATE.transactions.sort((a,b) => new Date(b.date) - new Date(a.date));
+  save();
+
+  document.getElementById('successTitle').textContent = `${fresh.length} Transaction${fresh.length!==1?'s':''} Imported!`;
+  document.getElementById('successSub').textContent   = `${fresh.length} added to your transaction history.${dupes ? ` ${dupes} duplicate${dupes>1?'s':''} skipped.` : ''} Your dashboard and analytics have been updated.`;
+  goToStep(4);
+  renderDashboard();
+}
+
+// ── DATE PARSER ──
+function parseAnyDate(raw) {
+  if (!raw) return null;
+  const s = String(raw).trim().replace(/\s+/g,' ');
+
+  // ISO: 2024-01-15
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+  // DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+  const dmy = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
+  if (dmy) {
+    const y = dmy[3].length === 2 ? '20'+dmy[3] : dmy[3];
+    return `${y}-${String(dmy[2]).padStart(2,'0')}-${String(dmy[1]).padStart(2,'0')}`;
+  }
+
+  // MM/DD/YYYY (US format — less likely for Indian banks but handle it)
+  const mdy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (mdy && parseInt(mdy[1]) <= 12 && parseInt(mdy[2]) > 12) {
+    return `${mdy[3]}-${String(mdy[1]).padStart(2,'0')}-${String(mdy[2]).padStart(2,'0')}`;
+  }
+
+  // "15 Jan 2024" or "Jan 15, 2024"
+  const months = {jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+  const textDate = s.match(/(\d{1,2})\s+([a-zA-Z]{3,})\s+(\d{4})/);
+  if (textDate) {
+    const m = months[textDate[2].slice(0,3).toLowerCase()];
+    if (m) return `${textDate[3]}-${String(m).padStart(2,'0')}-${String(textDate[1]).padStart(2,'0')}`;
+  }
+  const textDate2 = s.match(/([a-zA-Z]{3,})\s+(\d{1,2}),?\s+(\d{4})/);
+  if (textDate2) {
+    const m = months[textDate2[1].slice(0,3).toLowerCase()];
+    if (m) return `${textDate2[3]}-${String(m).padStart(2,'0')}-${String(textDate2[2]).padStart(2,'0')}`;
+  }
+
+  // Excel serial date number
+  if (/^\d{5}$/.test(s)) {
+    const d = new Date((parseInt(s) - 25569) * 86400 * 1000);
+    if (!isNaN(d)) return d.toISOString().split('T')[0];
+  }
+
+  return null;
+}
+
+// ── MONEY PARSER ──
+function parseMoney(raw) {
+  if (!raw && raw !== 0) return 0;
+  const s = String(raw).replace(/[₹,\s]/g,'').replace(/[()]/g, s => s === '(' ? '-' : '');
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+
+// ── HOOK INTO NAVIGATION ──
+const _origRenderPageImport = renderPage;
+renderPage = function(page) {
+  _origRenderPageImport(page);
+  if (page === 'import') {
+    initDropZone();
+    resetImport();
+  }
+};
